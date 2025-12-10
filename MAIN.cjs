@@ -35,6 +35,11 @@ async function measureAudioCharacteristics(filepath) {
   let zeroCrossingRates = [];
   let dynamicComplexities = [];
   let spectralFluxes = [];
+  let lowFreqEnergies = [];
+  let highFreqEnergies = [];
+  let spectralFlatnesses = [];
+  let spectralPeakCounts = [];
+  let frameSilences = [];
 
   for (let i = 0; i < audio.length - frameSize; i += hopSize) {
     const frame = audio.slice(i, i + frameSize);
@@ -121,6 +126,48 @@ async function measureAudioCharacteristics(filepath) {
         spectralFluxes.push(flux.flux);
       } catch (e) {}
     }
+
+    // Low and high frequency energy for balance calculation
+    try {
+      const spectrumArray = Array.from(spectrum.spectrum);
+      const splitPoint = Math.floor(spectrumArray.length * 0.1); // Split at ~1kHz for typical audio
+
+      const lowFreqs = spectrumArray.slice(0, splitPoint);
+      const highFreqs = spectrumArray.slice(splitPoint);
+
+      const lowEnergy =
+        lowFreqs.reduce((a, b) => a + b * b, 0) / lowFreqs.length;
+      const highEnergy =
+        highFreqs.reduce((a, b) => a + b * b, 0) / highFreqs.length;
+
+      lowFreqEnergies.push(lowEnergy);
+      highFreqEnergies.push(highEnergy);
+    } catch (e) {}
+
+    // Spectral flatness for density measurement
+    try {
+      const flatness = essentia.Flatness(spectrum.spectrum);
+      spectralFlatnesses.push(flatness.flatness);
+    } catch (e) {}
+
+    // Count spectral peaks for density
+    try {
+      const peaks = essentia.SpectralPeaks(
+        spectrum.spectrum,
+        50, // maxPeaks - increased for better detection
+        sampleRate / 2, // maxFreq
+        20, // minFreq
+        0.000001, // magnitudeThreshold - lowered for more sensitivity
+        "magnitude", // orderBy
+      );
+      spectralPeakCounts.push(peaks.frequencies.size());
+    } catch (e) {}
+
+    // Detect silence/low energy frames
+    try {
+      const energy = essentia.Energy(frameVector);
+      frameSilences.push(energy.energy < 0.001 ? 1 : 0);
+    } catch (e) {}
   }
 
   try {
@@ -149,6 +196,14 @@ async function measureAudioCharacteristics(filepath) {
   const loudnessStats = calculateStats(loudnesses);
   const zcrStats = calculateStats(zeroCrossingRates);
   const fluxStats = calculateStats(spectralFluxes);
+  const lowEnergyStats = calculateStats(lowFreqEnergies);
+  const highEnergyStats = calculateStats(highFreqEnergies);
+  const flatnessStats = calculateStats(spectralFlatnesses);
+  const peakCountStats = calculateStats(spectralPeakCounts);
+  const silenceRatio =
+    frameSilences.length > 0
+      ? frameSilences.reduce((a, b) => a + b, 0) / frameSilences.length
+      : 0;
 
   const normalizedHFC = Math.min(100, (hfcStats.mean / 10000) * 100);
   const normalizedCentroid = Math.min(100, (centroidStats.mean / 10000) * 100);
@@ -198,6 +253,31 @@ async function measureAudioCharacteristics(filepath) {
     normalizedSmoothness * 0.2 +
     peakSoftness * 0.2;
 
+  // High-Low Balance calculation (0 = bass heavy, 100 = treble heavy)
+  const totalEnergy = lowEnergyStats.mean + highEnergyStats.mean;
+  let highLowBalance = 50; // Default to balanced if no energy detected
+
+  if (totalEnergy > 0) {
+    // Calculate ratio of high frequency energy to total energy
+    const highRatio = highEnergyStats.mean / totalEnergy;
+    highLowBalance = Math.min(100, Math.max(0, highRatio * 100));
+  }
+
+  // Density calculation (0 = very sparse, 100 = very dense)
+  const normalizedFlatness = Math.max(0, 100 - flatnessStats.mean * 100); // Inverted: flat = less dense
+  const normalizedPeakCount = Math.min(100, (peakCountStats.mean / 15) * 100); // More peaks = denser
+  const normalizedActivity = Math.max(0, 100 - silenceRatio * 100); // Less silence = denser
+  const normalizedComplexityDensity = Math.min(
+    100,
+    (complexityStats.mean / 10) * 100,
+  );
+
+  const densityScore =
+    normalizedPeakCount * 0.35 +
+    normalizedActivity * 0.25 +
+    normalizedComplexityDensity * 0.25 +
+    normalizedFlatness * 0.15;
+
   const createBar = (score) => {
     const filled = Math.round(score / 5);
     const empty = 20 - filled;
@@ -212,6 +292,12 @@ async function measureAudioCharacteristics(filepath) {
   );
   console.log(
     `Softness:       ${createBar(softnessScore)} ${softnessScore.toFixed(0)}%`,
+  );
+  console.log(
+    `High-Low Bal:   ${createBar(highLowBalance)} ${highLowBalance.toFixed(0)}%`,
+  );
+  console.log(
+    `Density:        ${createBar(densityScore)} ${densityScore.toFixed(0)}%`,
   );
 }
 
