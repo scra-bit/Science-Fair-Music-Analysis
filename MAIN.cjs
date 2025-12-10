@@ -6,7 +6,7 @@ async function loadWav(filepath) {
   const buffer = fs.readFileSync(filepath);
   const arrayBuffer = buffer.buffer.slice(
     buffer.byteOffset,
-    buffer.byteOffset + buffer.byteLength
+    buffer.byteOffset + buffer.byteLength,
   );
   const wav = await WavDecoder.decode(arrayBuffer);
   const channelData = wav.channelData[0];
@@ -44,7 +44,7 @@ async function measureAudioCharacteristics(filepath) {
       frameVector,
       true,
       frameSize,
-      "blackmanharris62"
+      "blackmanharris62",
     );
     const spectrum = essentia.Spectrum(windowed.frame);
 
@@ -67,7 +67,7 @@ async function measureAudioCharacteristics(filepath) {
       const peaks = essentia.SpectralPeaks(spectrum.spectrum);
       const dissonance = essentia.Dissonance(
         peaks.frequencies,
-        peaks.magnitudes
+        peaks.magnitudes,
       );
       dissonances.push(dissonance.dissonance);
     } catch (e) {}
@@ -81,7 +81,7 @@ async function measureAudioCharacteristics(filepath) {
       const peaks = essentia.SpectralPeaks(spectrum.spectrum);
       const inharmonicity = essentia.Inharmonicity(
         peaks.frequencies,
-        peaks.magnitudes
+        peaks.magnitudes,
       );
       inharmonicities.push(inharmonicity.inharmonicity);
     } catch (e) {}
@@ -114,7 +114,7 @@ async function measureAudioCharacteristics(filepath) {
           prevVector,
           true,
           frameSize,
-          "blackmanharris62"
+          "blackmanharris62",
         );
         const prevSpectrum = essentia.Spectrum(prevWindowed.frame);
         const flux = essentia.Flux(prevSpectrum.spectrum, spectrum.spectrum);
@@ -171,7 +171,7 @@ async function measureAudioCharacteristics(filepath) {
   const normalizedSalience = Math.min(100, salienceStats.mean * 100);
   const normalizedHarmonicity = Math.max(
     0,
-    100 - inharmonicityStats.mean * 1000
+    100 - inharmonicityStats.mean * 1000,
   );
   const normalizedTonalEntropy = Math.max(0, 100 - entropyStats.mean * 12);
 
@@ -184,12 +184,12 @@ async function measureAudioCharacteristics(filepath) {
   const normalizedRolloff = Math.max(0, 100 - rolloffStats.mean / 100);
   const normalizedQuietness = Math.max(
     0,
-    100 - Math.min(100, loudnessStats.mean / 20)
+    100 - Math.min(100, loudnessStats.mean / 20),
   );
   const normalizedSmoothness = Math.max(0, 100 - zcrStats.mean * 200);
   const peakSoftness = Math.max(
     0,
-    100 - Math.min(100, loudnessStats.percentile90 / 30)
+    100 - Math.min(100, loudnessStats.percentile90 / 30),
   );
 
   const softnessScore =
@@ -204,12 +204,20 @@ async function measureAudioCharacteristics(filepath) {
     return "#".repeat(filled) + "-".repeat(empty);
   };
 
-  console.log(`Aggressiveness: ${createBar(aggressivenessScore)} ${aggressivenessScore.toFixed(0)}%`);
-  console.log(`Tonality:       ${createBar(tonalityScore)} ${tonalityScore.toFixed(0)}%`);
-  console.log(`Softness:       ${createBar(softnessScore)} ${softnessScore.toFixed(0)}%`);
+  console.log(
+    `Aggressiveness: ${createBar(aggressivenessScore)} ${aggressivenessScore.toFixed(0)}%`,
+  );
+  console.log(
+    `Tonality:       ${createBar(tonalityScore)} ${tonalityScore.toFixed(0)}%`,
+  );
+  console.log(
+    `Softness:       ${createBar(softnessScore)} ${softnessScore.toFixed(0)}%`,
+  );
 }
 
-measureAudioCharacteristics("./song.wav").catch((err) => {
+const filepath = process.argv[2] || "./song.wav";
+
+measureAudioCharacteristics(filepath).catch((err) => {
   console.error("Error:", err.message);
   process.exit(1);
 });
